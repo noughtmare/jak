@@ -16,7 +16,6 @@ executable jak
   other-modules:       Data.Monoid.Nth
                      , Jak.Core
                      , Jak.Frontend.Vty
-                     , Jak.Content.SingleSeq
                      , Jak.Content.DoubleSeq
   build-depends:       base >=4.10 && <4.11
                      , microlens
@@ -25,6 +24,4 @@ executable jak
                      , containers
   hs-source-dirs:      src
   default-language:    Haskell2010
-  ghc-options:         -threaded 
-                       -dynamic 
-                       -O2
+  ghc-options:         -O2 -threaded

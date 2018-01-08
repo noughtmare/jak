@@ -43,12 +43,11 @@ handleEvent (Vty.EvMouseDown c r Vty.BLeft []) = move (r,c)
 handleEvent (Vty.EvResize c r)           = resize (r,c)
 handleEvent _                            = id
 
-aSquare n = fromList (unlines (replicate n (replicate n 'a')))
+aSquare  n = fromList (unlines (replicate n (replicate n 'a')))
 aSquare' n = fromList (map fromList (replicate n (replicate n 'a')))
-aLine' n = singleton (fromList (replicate n 'a'))
+aLine'   n = singleton (fromList (replicate n 'a'))
 
 main :: IO ()
 main = do
-  writeFile "log" ""
   cfg <- Vty.standardIOConfig
-  run (vtyFrontend (cfg {Vty.mouseMode = Just True}) renderContent) myHandler (DoubleSeq (aSquare' 1000) 0 0 0)
+  run (vtyFrontend (cfg {Vty.mouseMode = Just True}) renderContent) myHandler (DoubleSeq (aSquare' 1000) 0 0 0 0 (50,50))

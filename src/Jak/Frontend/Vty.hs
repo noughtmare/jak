@@ -2,7 +2,9 @@ module Jak.Frontend.Vty where
 
 import Jak.Core
 
+import Control.FRPNow
 import qualified Graphics.Vty as Vty
+import Control.Applicative
 import System.IO
 
 data MyCursor = MyCursor !Int !Int deriving Eq
@@ -18,6 +20,6 @@ vtyFrontend cfg f = mkFrontend $ IOFrontend
   (\vty (cur,img) -> Vty.update vty ((Vty.picForImage img) { Vty.picCursor = toVtyCursor cur })) 
   (g . f)
   (appendFile "eventlog" . (++ "\n") . show)
-  (appendFile "modellog" . (++ "\n") . show)
+  (\_ -> return ()) -- appendFile "modellog" . (++ "\n") . show)
   where
     g ((c,r),strs) = (MyCursor c r, mconcat (map (Vty.string Vty.defAttr) strs))

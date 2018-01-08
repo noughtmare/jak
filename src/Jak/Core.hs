@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards #-}
 module Jak.Core where
 
 import Control.FRPNow
@@ -8,6 +9,8 @@ import Data.Function
 import Control.Concurrent
 import Control.Exception (bracket)
 import System.Exit (ExitCode, exitWith)
+import Control.Applicative
+
 
 class Content a where
   move      :: (Int,Int) -> a -> a
@@ -19,7 +22,7 @@ class Content a where
   delete    :: a -> a
   backspace :: a -> a
   renderContent :: a -> ((Int,Int),[String])
-  emptyContent :: a
+  emptyContent :: (Int,Int) -> a
   resize    :: (Int,Int) -> a -> a
 
 newtype Frontend event model = Frontend { runNow :: (EvStream event -> Now (BehaviorEnd model ExitCode)) -> IO () }
