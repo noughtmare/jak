@@ -10,7 +10,7 @@ Planned features are (in order of importance):
 
   - [x] Can edit text
   - [x] Has a viewport
-  - [ ] Does wrap lines
+  - [ ] Supports line wrapping.
   - [ ] Can read and write files
 
 Long term goals:
