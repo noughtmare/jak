@@ -1,5 +1,5 @@
 name:                jak
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            Basic text editor
 description:         Jak is a basic text editor intended to test experimental features and run benchmarks.
 license:             AGPL-3
