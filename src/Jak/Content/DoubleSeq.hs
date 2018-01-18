@@ -37,6 +37,9 @@ module Jak.Content.DoubleSeq where
 --
 -- When implementing this I really noticed that the code became much more
 -- readable.
+--
+-- TODO:
+--   - Split this module into multiple modules, one for each section.
 
 import Control.Monad.State
 import Control.Lens
@@ -53,10 +56,13 @@ import qualified Jak.Core as J
 -- Types
 --------------------------------------------------------------------------------
 
+-- Strong types!
+-- https://www.fpcomplete.com/blog/2018/01/weakly-typed-haskell
+
 data Size     = Size     !Width  !Height
-  deriving Show
+  deriving (Show, Eq)
 data Position = Position !Column !Row
-  deriving Eq
+  deriving (Show, Eq)
 
 instance Ord Position where
   compare (Position c r) (Position c' r') = case compare r r' of
@@ -64,16 +70,19 @@ instance Ord Position where
     GT -> GT
     EQ -> compare c c'
 
+-- FIXME:
+-- Instead of having all these awkward conversion functions
+-- there should be functions that operate directly on these
+-- strong types.
 s2p :: Size -> Position
 s2p (Size w h) = Position (w2c w) (h2r h)
 
 p2s :: Position -> Size
 p2s (Position c r) = Size (c2w c) (r2h r)
 
--- Type safety!
-
--- NOTE: Linear.Affine from Edward Kmett's linear library could help with
+-- NOTE: Linear.Affine from the linear package could help with
 -- type safety and usability, but I am too lazy to implement it now.
+-- (that will also fix the FIXME above)
 newtype Width = W Int
   deriving (Eq,Ord,Show,Read,Enum,Num,Real,Bounded,Integral)
 
@@ -102,13 +111,20 @@ c2w = fromIntegral
 -- Viewport
 --------------------------------------------------------------------------------
 
+-- The viewport keeps track of the part of the content that is currently
+-- visible.
+
 data Viewport = Viewport
   { _viewportPosition :: !Position
-  , _viewportSize :: !Size
+  , _viewportSize     :: !Size
   }
 
 makeLenses ''Viewport
 
+-- TODO:
+-- make these '*Event' types into classes/records.
+-- That will make it much more modular and probably simpler,
+-- but it will move away from frp-like systems
 data ViewportEvent
   = Resize !Size
   | Moved !Position
@@ -131,7 +147,7 @@ scrollViewport (Resize size) (Viewport pos _) = Viewport pos size
 -- Cursor
 --------------------------------------------------------------------------------
 
--- This is a type that holds values that are used when moving up or down to
+-- | This is a type that holds values that are used when moving up or down to
 -- memorize the column offset.
 newtype VirtualColumn = V Int
   deriving (Eq,Ord,Show,Read,Enum,Num,Real,Bounded,Integral)
