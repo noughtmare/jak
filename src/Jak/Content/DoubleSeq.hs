@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Jak.Content.DoubleSeq where
 
 -- |
@@ -37,6 +38,8 @@ module Jak.Content.DoubleSeq where
 -- When implementing this I really noticed that the code became much more
 -- readable.
 
+import Control.Monad.State
+import Control.Lens
 import Control.Applicative
 import Control.FRPNow
 import Data.Foldable
@@ -96,88 +99,16 @@ c2w :: Column -> Width
 c2w = fromIntegral
 
 --------------------------------------------------------------------------------
--- Editor
---------------------------------------------------------------------------------
-
-data Editor = Editor !Viewport !Cursor !Content
-data EditorEvent
-  = EditorInsert String
-  | EditorBackspace
-  | EditorDelete
-  | EditorMoveLeft
-  | EditorMoveRight
-  | EditorMoveUp
-  | EditorMoveDown
-  | EditorMove Position
-  | EditorResize Size
-
-emptyEditor :: Size -> Editor
-emptyEditor size = Editor (emptyViewport size) emptyCursor emptyContent
-
-editor :: Editor -> EvStream EditorEvent -> Now (EvStream Editor)
-editor = (sample .) . scanlEv applyEditorEvent
-
-applyEditorEvent :: Editor -> EditorEvent -> Editor
-applyEditorEvent (Editor vpt@(Viewport pos _) cur con) = \case
-  EditorMoveLeft ->
-    let vpt' = scrollViewport vpt (Moved (cursorPos cur'))
-        cur' = moveCursor cur (Shape shp, MoveWest True)
-        shp  = (\(Content s) -> fmap length s) con
-    in  Editor vpt' cur' con
-  EditorMoveRight ->
-    let vpt' = scrollViewport vpt (Moved (cursorPos cur'))
-        cur' = moveCursor cur (Shape shp, MoveEast True)
-        shp  = (\(Content s) -> fmap length s) con
-    in  Editor vpt' cur' con
-  EditorMoveUp ->
-    let vpt' = scrollViewport vpt (Moved (cursorPos cur'))
-        cur' = moveCursor cur (Shape shp, MoveNorth)
-        shp  = (\(Content s) -> fmap length s) con
-    in  Editor vpt' cur' con
-  EditorMoveDown ->
-    let vpt' = scrollViewport vpt (Moved (cursorPos cur'))
-        cur' = moveCursor cur (Shape shp, MoveSouth)
-        shp  = (\(Content s) -> fmap length s) con
-    in  Editor vpt' cur' con
-  EditorResize newSize -> Editor (Viewport pos newSize) cur con
-  EditorInsert ""      -> Editor vpt cur con
-  EditorInsert str@[_] ->
-    let
-      vpt' = scrollViewport vpt (Moved (cursorPos cur'))
-      cur' = moveCursor cur (Shape shp, MoveEast False)
-      con' =
-        replaceContent con (Replace (Range (cursorPos cur) (Size 0 0)) str)
-      shp = (\(Content s) -> fmap length s) con'
-      f (Position c r) = \case
-        '\n' -> Position 0 (r + 1)
-        _    -> Position (c + 1) r
-    in
-      Editor vpt' cur' con'
-  EditorInsert _ -> error "Can't insert multiple characters yet"
-  EditorBackspace ->
-    let
-      vpt' = scrollViewport vpt (Moved (cursorPos cur'))
-      cur' = moveCursor cur (Shape shp, MoveWest False)
-      con' = replaceContent
-        con
-        (Replace (rangeFromTo (cursorPos cur') (cursorPos cur)) "")
-      shp = (\(Content s) -> fmap length s) con
-    in
-      Editor vpt' cur' con'
-  EditorDelete -> Editor
-    vpt
-    cur
-    (replaceContent con (Replace (Range (cursorPos cur) (Size 1 0)) ""))
-
-rangeFromTo :: Position -> Position -> Range
-rangeFromTo p@(Position c r) q@(Position c' r')
-  = Range (min p q) (Size (c2w (abs (c' - c))) (r2h (abs (r' - r))))
-
---------------------------------------------------------------------------------
 -- Viewport
 --------------------------------------------------------------------------------
 
-data Viewport = Viewport !Position !Size
+data Viewport = Viewport
+  { _viewportPosition :: !Position
+  , _viewportSize :: !Size
+  }
+
+makeLenses ''Viewport
+
 data ViewportEvent
   = Resize !Size
   | Moved !Position
@@ -185,8 +116,8 @@ data ViewportEvent
 emptyViewport :: Size -> Viewport
 emptyViewport = Viewport (Position 0 0)
 
-scrollViewport :: Viewport -> ViewportEvent -> Viewport
-scrollViewport (Viewport (Position vc vr) size@(Size w h)) (Moved (Position cc cr))
+scrollViewport :: ViewportEvent -> Viewport -> Viewport
+scrollViewport (Moved (Position cc cr)) (Viewport (Position vc vr) size@(Size w h))
   = let c | cc < vc          = cc
           | cc >= vc + w2c w = cc - w2c w + 1
           | otherwise        = vc
@@ -194,7 +125,7 @@ scrollViewport (Viewport (Position vc vr) size@(Size w h)) (Moved (Position cc c
           | cr >= vr + h2r h = cr - h2r h + 1
           | otherwise        = vr
     in  Viewport (Position c r) size
-scrollViewport (Viewport pos _) (Resize size) = Viewport pos size
+scrollViewport (Resize size) (Viewport pos _) = Viewport pos size
 
 --------------------------------------------------------------------------------
 -- Cursor
@@ -211,7 +142,13 @@ v2c = fromIntegral
 c2v :: Column -> VirtualColumn
 c2v = fromIntegral
 
-data Cursor = Cursor { cursorPos :: !Position, cursorVirtCol :: !VirtualColumn }
+data Cursor = Cursor
+  { _cursorPos :: !Position
+  , _cursorVirtCol :: !VirtualColumn
+  }
+
+makeLenses ''Cursor
+
 data CursorEvent
   = MoveNorth
   | MoveEast Bool
@@ -224,8 +161,8 @@ newtype Shape = Shape (S.Seq Int)
 emptyCursor :: Cursor
 emptyCursor = Cursor (Position 0 0) 0
 
-moveCursor :: Cursor -> (Shape,CursorEvent) -> Cursor
-moveCursor (Cursor (Position c r) v) (Shape shape, move) =
+moveCursor :: (Shape,CursorEvent) -> Cursor -> Cursor
+moveCursor (Shape shape, move) (Cursor (Position c r) v) =
   let (Position c' r') = newPos
       r'' = min (R (length shape)) r'
       c'' = min (C (S.index shape (fromIntegral r''))) c'
@@ -250,15 +187,20 @@ moveCursor (Cursor (Position c r) v) (Shape shape, move) =
 -- Content
 --------------------------------------------------------------------------------
 
-newtype Content = Content (S.Seq (S.Seq Char))
+newtype Content = Content
+  { _contentSeq :: (S.Seq (S.Seq Char))
+  }
+
+makeLenses ''Content
+
 data ContentEvent = Replace !Range !String
 data Range = Range !Position !Size
 
 emptyContent :: Content
 emptyContent = Content S.empty
 
-replaceContent :: Content -> ContentEvent -> Content
-replaceContent (Content s) (Replace (Range pos size) as) =
+replaceContent :: ContentEvent -> Content -> Content
+replaceContent (Replace (Range pos size) as) (Content s) =
    let (a,b') = splitAtPosition pos s
        b = dropUntilPosition (s2p size) b'
    in Content (overlap3 a (toDoubleSeq as) b)
@@ -288,3 +230,72 @@ toDoubleSeq = S.fromList . map S.fromList . lines'
     -- Proper lines implementation ;)
     lines' :: String -> [String]
     lines' = foldr (\a (b:bs) -> if a == '\n' then []:b:bs else (a:b):bs) [[]]
+
+--------------------------------------------------------------------------------
+-- Editor
+--------------------------------------------------------------------------------
+
+data Editor = Editor
+  { _editorViewport :: !Viewport
+  , _editorCursor   :: !Cursor
+  , _editorContent  :: !Content
+  }
+
+makeLenses ''Editor
+
+data EditorEvent
+  = EditorInsert String
+  | EditorBackspace
+  | EditorDelete
+  | EditorMoveLeft
+  | EditorMoveRight
+  | EditorMoveUp
+  | EditorMoveDown
+  | EditorMove Position
+  | EditorResize Size
+
+emptyEditor :: Size -> Editor
+emptyEditor size = Editor (emptyViewport size) emptyCursor emptyContent
+
+editor :: Editor -> EvStream EditorEvent -> Now (EvStream Editor)
+editor editor evs = sample (scanlEv (\a b -> execState (editorEventS b) a) editor evs)
+
+-- | Move the cursor using shape information from the content
+moveCursorWithShape :: CursorEvent -> State Editor ()
+moveCursorWithShape evt = do
+  shape <- Shape . fmap length <$> use (editorContent . contentSeq)
+  editorCursor %= moveCursor (shape,evt)
+
+-- | Update the viewport after the cursor has moved
+updateViewport :: State Editor ()
+updateViewport = do
+  c <- use (editorCursor . cursorPos)
+  editorViewport %= scrollViewport (Moved c)
+
+editorEventS :: EditorEvent -> State Editor ()
+editorEventS = \case
+  EditorMoveLeft  -> moveCursorWithShape (MoveWest True) *> updateViewport
+  EditorMoveRight -> moveCursorWithShape (MoveEast True) *> updateViewport
+  EditorMoveUp    -> moveCursorWithShape MoveNorth       *> updateViewport
+  EditorMoveDown  -> moveCursorWithShape MoveSouth       *> updateViewport
+  EditorResize newSize -> editorViewport . viewportSize .= newSize
+  EditorInsert ""      -> pure ()
+  EditorInsert str@[_] -> do
+    c <- use (editorCursor . cursorPos)
+    editorContent %= replaceContent (Replace (Range c (Size 0 0)) str)
+    moveCursorWithShape (MoveEast False)
+    updateViewport
+  EditorInsert _ -> error "Can't insert multiple character yet"
+  EditorBackspace -> do
+    c <- use (editorCursor . cursorPos)
+    moveCursorWithShape (MoveWest False)
+    c' <- use (editorCursor . cursorPos)
+    editorContent %= replaceContent (Replace (rangeFromTo c c') "")
+    updateViewport
+  EditorDelete -> do
+    c <- use (editorCursor . cursorPos)
+    editorContent %= replaceContent (Replace (Range c (Size 1 0)) "")
+
+rangeFromTo :: Position -> Position -> Range
+rangeFromTo p@(Position c r) q@(Position c' r')
+  = Range (min p q) (Size (c2w (abs (c' - c))) (r2h (abs (r' - r))))
