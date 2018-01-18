@@ -9,13 +9,13 @@ The text editor can currently edit and show text.
 Planned features are (in order of importance):
 
   - [x] Can edit text
-  - [x] Having a viewport
-  - [ ] Wrapping lines
-  - [ ] Reading and writing files
+  - [x] Has a viewport
+  - [ ] Does wrap lines
+  - [ ] Can read and write files
 
 Long term goals:
  
-  - [ ] Integrate [haskell-lsp-client](https://github.com/noughtmare/haskell-lsp-client)
-  - [ ] Vim keybindings
-  - [ ] Browser frontend (this is the reason for the AGPL license)
+  - [ ] Supports the Language Server Protocol (using [haskell-lsp-client](https://github.com/noughtmare/haskell-lsp-client))
+  - [ ] Has vim keybindings
+  - [ ] Has browser frontend (this is the reason for the AGPL license)
 
