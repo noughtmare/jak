@@ -8,6 +8,7 @@ The text editor can currently edit and show text.
 
 Planned features are (in order of importance):
 
+  - [x] Can edit text
   - [x] Having a viewport
   - [ ] Wrapping lines
   - [ ] Reading and writing files
