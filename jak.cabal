@@ -17,11 +17,11 @@ executable jak
                      , Jak.Core
                      , Jak.Frontend.Vty
                      , Jak.Content.DoubleSeq
-  build-depends:       base >=4.10 && <4.11
+  build-depends:       base >=4.9 && <4.11
                      , microlens
                      , frpnow
                      , vty
-                     , containers
+                     , containers >= 0.5.10.2
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -O2 -threaded

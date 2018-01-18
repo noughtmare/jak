@@ -1,53 +1,68 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 
-import Jak.Core
-import Jak.Frontend.Vty
-import Jak.Content.DoubleSeq
+import           Control.Applicative
+import           Control.Concurrent
+import           Control.FRPNow
+import           Control.Monad
+import           Control.Monad.IO.Class        (liftIO)
+import           Data.Foldable                 (toList, fold)
+import           Data.IORef
+import           Data.Maybe
+import           Data.Monoid
+import           Data.Sequence                 (fromList, singleton)
+import qualified Data.Sequence          as S
+import qualified Graphics.Vty           as Vty
+import           Jak.Content.DoubleSeq
+import           Jak.Core
+import           Jak.Frontend.Vty
+import           System.Exit                   (ExitCode (ExitSuccess))
 
-import Data.Foldable (toList, fold)
-import Control.FRPNow
-import Control.Monad
-import Control.Concurrent
-import Control.Monad.IO.Class (liftIO)
-import System.Exit (ExitCode (ExitSuccess))
-import System.IO.Unsafe (unsafePerformIO)
-import Data.Monoid
-import Data.Maybe
-import Control.Applicative
-import qualified Graphics.Vty as Vty
-import Data.Sequence (fromList, singleton)
+editorToPicture :: Editor -> Vty.Picture
+editorToPicture (Editor (Viewport (Position vc vr) (Size vw vh)) (Cursor (Position cc cr) _) (Content con))
+  = Vty.Picture actualCursor [contentImage] Vty.ClearBackground
+ where
+  contentImage =
+    mconcat
+      . map
+          ( Vty.string Vty.defAttr . toList . S.take (fromIntegral vw) . S.drop
+            (fromIntegral vc)
+          )
+      . toList
+      . S.take (fromIntegral vh)
+      . S.drop (fromIntegral vr)
+      $ con
+  actualCursor = Vty.Cursor (fromIntegral (cc - vc)) (fromIntegral (cr - vr))
 
-myHandler :: Content a => Handler Vty.Event a
-myHandler = Handler $ \evs i -> do
+myHandler :: Handler Vty.Event Vty.Picture
+myHandler = Handler $ \evs pic -> do
   escEvent <- sample (next (filterEs (== Vty.EvKey Vty.KEsc []) evs))
-  i' <- sample (foldEs (\a b -> handleEvent b a) i evs)
-  pure (i' `Until` (ExitSuccess <$ escEvent))
+  pictures <- fmap editorToPicture
+    <$> editor (emptyEditor (Size 50 50)) (catMaybesEs (fmap toEditorEvent evs))
+  pure (pic, pictures, (ExitSuccess <$ escEvent))
 
-addLineNumbers :: Vty.Image -> Vty.Image
-addLineNumbers img = foldr1 (<>) (
-  [ Vty.string Vty.defAttr (replicate (max 3 (length (show (Vty.imageHeight img))) - length (show i)) ' ' ++ show i ++ " ")
-     | i <- [1..Vty.imageHeight img]]) Vty.<|> img
+toEditorEvent :: Vty.Event -> Maybe EditorEvent
+toEditorEvent = \case
+  Vty.EvResize w h           -> Just (EditorResize (Size (W w) (H h)))
+  Vty.EvKey Vty.KEnter    [] -> Just (EditorInsert "\n")
+  Vty.EvKey (Vty.KChar c) [] -> Just (EditorInsert [c])
+  Vty.EvKey Vty.KBS       [] -> Just (EditorBackspace)
+  Vty.EvKey Vty.KDel      [] -> Just (EditorDelete)
+  Vty.EvKey Vty.KLeft     [] -> Just (EditorMoveLeft)
+  Vty.EvKey Vty.KRight    [] -> Just (EditorMoveRight)
+  Vty.EvKey Vty.KUp       [] -> Just (EditorMoveUp)
+  Vty.EvKey Vty.KDown     [] -> Just (EditorMoveDown)
+  _                          -> Nothing
 
-handleEvent :: Content a => Vty.Event -> a -> a
-handleEvent (Vty.EvKey Vty.KEnter    []) = insert '\n'
-handleEvent (Vty.EvKey (Vty.KChar i) []) = insert i
-handleEvent (Vty.EvKey Vty.KBS       []) = backspace
-handleEvent (Vty.EvKey Vty.KDel      []) = delete
-handleEvent (Vty.EvKey Vty.KLeft     []) = moveLeft False
-handleEvent (Vty.EvKey Vty.KRight    []) = moveRight False
-handleEvent (Vty.EvKey Vty.KUp       []) = moveUp
-handleEvent (Vty.EvKey Vty.KDown     []) = moveDown
-handleEvent (Vty.EvMouseDown c r Vty.BLeft []) = move (r,c)
-handleEvent (Vty.EvResize c r)           = resize (r,c)
-handleEvent _                            = id
-
-aSquare  n = fromList (unlines (replicate n (replicate n 'a')))
+aSquare n = fromList (unlines (replicate n (replicate n 'a')))
 aSquare' n = fromList (map fromList (replicate n (replicate n 'a')))
-aLine'   n = singleton (fromList (replicate n 'a'))
+aLine' n = singleton (fromList (replicate n 'a'))
 
 main :: IO ()
 main = do
   cfg <- Vty.standardIOConfig
-  run (vtyFrontend (cfg {Vty.mouseMode = Just True}) renderContent) myHandler (DoubleSeq (aSquare' 1000) 0 0 0 0 (50,50))
+  run (vtyFrontend (cfg { Vty.mouseMode = Just True }))
+      myHandler
+      ((Vty.picForImage mempty) { Vty.picCursor = Vty.Cursor 0 0 })
