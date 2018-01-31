@@ -37,21 +37,20 @@ editorToPicture (Editor (Viewport (Position vc vr) (Size vw vh)) (Cursor (Positi
 myHandler :: Handler Vty.Event Vty.Picture
 myHandler = Handler $ \evs pic -> do
   escEvent <- sample (next (filterEs (== Vty.EvKey Vty.KEsc []) evs))
-  pictures <- fmap editorToPicture
-    <$> editor (emptyEditor (Size 50 50)) (catMaybesEs (fmap toEditorEvent evs))
+  pictures <- sample (fmap editorToPicture <$> editorBehavior (emptyEditor (Size 50 50)) (filterMapEs toEditorEvent evs))
   pure (pic, pictures, (ExitSuccess <$ escEvent))
 
 toEditorEvent :: Vty.Event -> Maybe EditorEvent
 toEditorEvent = \case
   Vty.EvResize w h           -> Just (EditorResize (Size (W w) (H h)))
-  Vty.EvKey Vty.KEnter    [] -> Just (EditorInsert "\n")
-  Vty.EvKey (Vty.KChar c) [] -> Just (EditorInsert [c])
+  Vty.EvKey Vty.KEnter    [] -> Just (EditorInsert '\n')
+  Vty.EvKey (Vty.KChar c) [] -> Just (EditorInsert c)
   Vty.EvKey Vty.KBS       [] -> Just (EditorBackspace)
   Vty.EvKey Vty.KDel      [] -> Just (EditorDelete)
-  Vty.EvKey Vty.KLeft     [] -> Just (EditorMoveLeft)
-  Vty.EvKey Vty.KRight    [] -> Just (EditorMoveRight)
-  Vty.EvKey Vty.KUp       [] -> Just (EditorMoveUp)
-  Vty.EvKey Vty.KDown     [] -> Just (EditorMoveDown)
+  Vty.EvKey Vty.KLeft     [] -> Just (EditorMoveDir West)
+  Vty.EvKey Vty.KRight    [] -> Just (EditorMoveDir East)
+  Vty.EvKey Vty.KUp       [] -> Just (EditorMoveDir North)
+  Vty.EvKey Vty.KDown     [] -> Just (EditorMoveDir South)
   _                          -> Nothing
 
 aSquare n = fromList (unlines (replicate n (replicate n 'a')))

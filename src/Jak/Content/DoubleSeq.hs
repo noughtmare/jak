@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE RecursiveDo #-}
 module Jak.Content.DoubleSeq where
 
 -- |
@@ -15,8 +16,9 @@ module Jak.Content.DoubleSeq where
 -- and it doesn't have many extraneous features which I probably won't need and
 -- will only get in the way of learning how to use it.
 --
--- The main alternatives for me would be Yampa, but I didn't want to learn how to
--- use the arrow interface. Or maybe reflex when I'm more confortable with FRP.
+-- The main alternatives for me would be Yampa, but I didn't want to learn how
+-- to use the arrow interface. Or maybe reflex when I'm more confortable with
+-- FRP.
 --
 -- === How to make sure I don't confuse the row, column, width or height?
 --
@@ -40,8 +42,8 @@ module Jak.Content.DoubleSeq where
 --
 -- TODO:
 --   - Split this module into multiple modules, one for each section.
+--   - Fix bugs (there are still some major bugs left)
 
-import Control.Monad.State
 import Control.Lens
 import Control.Applicative
 import Control.FRPNow
@@ -51,6 +53,18 @@ import Data.Maybe
 import Data.Monoid
 import qualified Data.Sequence as S
 import qualified Jak.Core as J
+import Control.Monad.Fix
+import Data.Bifunctor
+
+--------------------------------------------------------------------------------
+-- FRP Utils
+--------------------------------------------------------------------------------
+
+partitionEs :: (a -> Bool) -> EvStream a -> (EvStream a, EvStream a)
+partitionEs goesLeft evs = (filterEs goesLeft evs, filterEs (not . goesLeft) evs)
+
+fromUpdates :: a -> EvStream (a -> a) -> Behavior (EvStream a)
+fromUpdates a evs = scanlEv (flip id) a evs
 
 --------------------------------------------------------------------------------
 -- Types
@@ -58,17 +72,6 @@ import qualified Jak.Core as J
 
 -- Strong types!
 -- https://www.fpcomplete.com/blog/2018/01/weakly-typed-haskell
-
-data Size     = Size     !Width  !Height
-  deriving (Show, Eq)
-data Position = Position !Column !Row
-  deriving (Show, Eq)
-
-instance Ord Position where
-  compare (Position c r) (Position c' r') = case compare r r' of
-    LT -> LT
-    GT -> GT
-    EQ -> compare c c'
 
 -- FIXME:
 -- Instead of having all these awkward conversion functions
@@ -107,6 +110,24 @@ newtype Column = C Int
 c2w :: Column -> Width
 c2w = fromIntegral
 
+data Direction = North | East | South | West
+  deriving (Show, Eq)
+
+data Range = Range !Position !Size
+  deriving (Show, Eq)
+
+data Size = Size !Width !Height
+  deriving (Show, Eq)
+
+data Position = Position !Column !Row
+  deriving (Show, Eq)
+
+instance Ord Position where
+  compare (Position c r) (Position c' r') = case compare r r' of
+    LT -> LT
+    GT -> GT
+    EQ -> compare c c'
+
 --------------------------------------------------------------------------------
 -- Viewport
 --------------------------------------------------------------------------------
@@ -118,13 +139,8 @@ data Viewport = Viewport
   { _viewportPosition :: !Position
   , _viewportSize     :: !Size
   }
-
 makeLenses ''Viewport
 
--- TODO:
--- make these '*Event' types into classes/records.
--- That will make it much more modular and probably simpler,
--- but it will move away from frp-like systems
 data ViewportEvent
   = Resize !Size
   | Moved !Position
@@ -132,8 +148,16 @@ data ViewportEvent
 emptyViewport :: Size -> Viewport
 emptyViewport = Viewport (Position 0 0)
 
-scrollViewport :: ViewportEvent -> Viewport -> Viewport
-scrollViewport (Moved (Position cc cr)) (Viewport (Position vc vr) size@(Size w h))
+viewportBehavior :: Viewport
+                 -> EvStream Cursor
+                 -> EvStream Size
+                 -> Behavior (EvStream Viewport)
+viewportBehavior s cur size = scanlEv scrollViewport s viewportEvs
+  where
+    viewportEvs = fmap Resize size `merge` fmap (Moved . _cursorPos) cur
+
+scrollViewport :: Viewport -> ViewportEvent -> Viewport
+scrollViewport (Viewport (Position vc vr) size@(Size w h)) (Moved (Position cc cr))
   = let c | cc < vc          = cc
           | cc >= vc + w2c w = cc - w2c w + 1
           | otherwise        = vc
@@ -141,7 +165,7 @@ scrollViewport (Moved (Position cc cr)) (Viewport (Position vc vr) size@(Size w 
           | cr >= vr + h2r h = cr - h2r h + 1
           | otherwise        = vr
     in  Viewport (Position c r) size
-scrollViewport (Resize size) (Viewport pos _) = Viewport pos size
+scrollViewport (Viewport pos _) (Resize size) = Viewport pos size
 
 --------------------------------------------------------------------------------
 -- Cursor
@@ -161,65 +185,116 @@ c2v = fromIntegral
 data Cursor = Cursor
   { _cursorPos :: !Position
   , _cursorVirtCol :: !VirtualColumn
-  }
-
+  } deriving Eq
 makeLenses ''Cursor
 
 data CursorEvent
-  = MoveNorth
-  | MoveEast Bool
-  | MoveSouth
-  | MoveWest Bool
-  | MoveAbs Column Row
+  = Move !Direction
+  | MoveAbs !Position
+  | MoveInsert
+  | MoveBackspace
 
 newtype Shape = Shape (S.Seq Int)
 
 emptyCursor :: Cursor
 emptyCursor = Cursor (Position 0 0) 0
 
-moveCursor :: (Shape,CursorEvent) -> Cursor -> Cursor
-moveCursor (Shape shape, move) (Cursor (Position c r) v) =
-  let (Position c' r') = newPos
-      r'' = min (R (length shape)) r'
-      c'' = min (C (S.index shape (fromIntegral r''))) c'
-  in Cursor (Position c'' r'') (c2v c')
+cursorBehavior :: Cursor
+               -> EvStream CursorEvent
+               -> EvStream Shape
+               -> Shape
+               -> Behavior (EvStream Cursor)
+cursorBehavior a evs shapeEs shape0 = do
+  shape  <- fromChanges shape0 shapeEs
+  dshape <- delay evs shape0 shape
+  scanlEv moveCursor a
+    $ uncurry merge
+    $ bimap (f dshape) (f shape)
+    $ partitionEs isBefore evs
   where
-    lineLength :: Column
+    f s = (fmap (,) s <@@>)
+    isBefore = \case
+      MoveInsert -> False
+      _ -> True
+
+-- FIXME: clean up ugly code
+moveCursor :: Cursor -> (Shape,CursorEvent) -> Cursor
+moveCursor (Cursor (Position c r) v) (Shape shape, move) =
+  p
+  where
+    clamp shape (Position cc rr) = let rr' = min (R (length shape)) rr in Cursor (Position (min (C (S.index shape (fromIntegral rr'))) cc) rr') (c2v c)
     lineLength = C $ S.index shape (fromIntegral r)
-    contentLength :: Row
     contentLength = R $ length shape
-    newPos = case move of
-      MoveNorth     -> Position (v2c v) (max 0 (r - 1))
-      MoveEast stayOnLine | stayOnLine || c < lineLength -> Position (min lineLength (c + 1)) r
-                          | r < contentLength -> Position 0 (r + 1)
-                          | otherwise -> Position c r
-      MoveSouth     -> Position (v2c v) (min (contentLength - 1) (r + 1))
-      MoveWest stayOnLine | stayOnLine || c > 0 -> Position (max 0 (c - 1)) r
-                          | r > 0               -> Position (C (S.index shape (fromIntegral (r - 1)))) (r - 1)
-                          | otherwise           -> Position c r
-      MoveAbs c' r' -> Position c' r'
+    lineLength' = C $ S.index shape (fromIntegral r)
+    mkCursor p@(Position c _) = Cursor p (c2v c)
+    p = case move of
+      Move North    -> clamp shape $ Position (v2c v) (max 0 (r - 1))
+      Move East     -> clamp shape $ Position (min lineLength (c + 1)) r
+      Move South    -> clamp shape $ Position (v2c v) (min (contentLength - 1) (r + 1))
+      Move West     -> clamp shape $ Position (max 0 (c - 1)) r
+      MoveAbs p     -> clamp shape p
+      MoveBackspace
+        | c > 0 -> mkCursor $ Position (c - 1) r
+        | r > 0 -> mkCursor $ Position (C (S.index shape (fromIntegral (r - 1)))) (r - 1)
+        | otherwise -> mkCursor $ Position 0 0
+      MoveInsert
+        | c < lineLength' -> mkCursor $ Position (c + 1) r
+        | otherwise       -> mkCursor $ Position 0       (r + 1)
 
 --------------------------------------------------------------------------------
--- Content
+-- Content (the actual DoubleSeq)
 --------------------------------------------------------------------------------
 
 newtype Content = Content
-  { _contentSeq :: (S.Seq (S.Seq Char))
+  { _contentSeq :: S.Seq (S.Seq Char)
   }
-
 makeLenses ''Content
 
-data ContentEvent = Replace !Range !String
-data Range = Range !Position !Size
+-- virtual getter
+contentShape :: Getter Content Shape
+contentShape f = contramap s2a . f . s2a
+  where
+    s2a = Shape . fmap length . view contentSeq
 
-emptyContent :: Content
 emptyContent = Content S.empty
 
-replaceContent :: ContentEvent -> Content -> Content
-replaceContent (Replace (Range pos size) as) (Content s) =
+overlap (S.Empty     ) (b           ) = b
+overlap (a           ) (S.Empty     ) = a
+overlap ((a S.:|> aa)) ((bb S.:<| b)) = (mconcat [a, S.singleton (aa <> bb), b])
+
+data ContentEvent
+  = ContentInsert !Char
+  | ContentBackspace
+  | ContentDelete
+
+contentBehavior :: Content
+                -> EvStream ContentEvent
+                -> EvStream Position
+                -> Position
+                -> Behavior (EvStream Content)
+contentBehavior a evs posEs pos0 = do
+  pos <- fromChanges pos0 posEs
+  dpos <- delay evs pos0 pos
+  scanlEv replaceContent a
+    $ uncurry merge
+    $ bimap (f dpos) (f pos)
+    $ partitionEs isBefore evs
+  where
+    f p = (fmap mkReplace p <@@>)
+
+    isBefore = \case
+      ContentInsert _ -> True
+      _               -> False
+    mkReplace p = \case
+      ContentInsert c  -> (Range p (Size 1 0), [c])
+      ContentBackspace -> (Range p (Size 1 0), "")
+      ContentDelete    -> (Range p (Size 1 0), "")
+
+replaceContent :: Content -> (Range, String) -> Content
+replaceContent (Content s) (Range pos size, as) =
    let (a,b') = splitAtPosition pos s
        b = dropUntilPosition (s2p size) b'
-   in Content (overlap3 a (toDoubleSeq as) b)
+   in Content (a `overlap` toDoubleSeq as `overlap` b)
 
 dropUntilPosition :: Position -> S.Seq (S.Seq Char) -> S.Seq (S.Seq Char)
 dropUntilPosition (Position (C c) (R r)) = f . S.drop r
@@ -227,25 +302,19 @@ dropUntilPosition (Position (C c) (R r)) = f . S.drop r
     f S.Empty = S.Empty
     f (x S.:<| xs) = S.drop c x S.:<| xs
 
-splitAtPosition :: Position -> S.Seq (S.Seq Char) -> (S.Seq (S.Seq Char),S.Seq (S.Seq Char))
+splitAtPosition :: Position
+                -> S.Seq (S.Seq Char)
+                -> (S.Seq (S.Seq Char), S.Seq (S.Seq Char))
 splitAtPosition (Position (C col) (R row)) s = case S.splitAt row s of
   (a,b S.:<| c) -> let (d,e) = S.splitAt col b in (a S.:|> d, e S.:<| c)
   (a,S.Empty) -> (a,S.Empty)
-
-overlap3 :: S.Seq (S.Seq Char) -> S.Seq (S.Seq Char) -> S.Seq (S.Seq Char) -> S.Seq (S.Seq Char)
-overlap3 a b c = a `overlap2` b `overlap2` c
-
-overlap2 :: S.Seq (S.Seq Char) -> S.Seq (S.Seq Char) -> S.Seq (S.Seq Char)
-overlap2 S.Empty      b            = b
-overlap2 a            S.Empty      = a
-overlap2 (a S.:|> aa) (bb S.:<| b) = mconcat [a, S.singleton (aa <> bb), b]
 
 toDoubleSeq :: String -> S.Seq (S.Seq Char)
 toDoubleSeq = S.fromList . map S.fromList . lines'
   where
     -- Proper lines implementation ;)
     lines' :: String -> [String]
-    lines' = foldr (\a (b:bs) -> if a == '\n' then []:b:bs else (a:b):bs) [[]]
+    lines' = foldr (\a ~(b:bs) -> if a == '\n' then []:b:bs else (a:b):bs) [[]]
 
 --------------------------------------------------------------------------------
 -- Editor
@@ -256,62 +325,59 @@ data Editor = Editor
   , _editorCursor   :: !Cursor
   , _editorContent  :: !Content
   }
-
 makeLenses ''Editor
 
 data EditorEvent
-  = EditorInsert String
+  = EditorInsert    !Char
   | EditorBackspace
   | EditorDelete
-  | EditorMoveLeft
-  | EditorMoveRight
-  | EditorMoveUp
-  | EditorMoveDown
-  | EditorMove Position
-  | EditorResize Size
+  | EditorMoveDir   !Direction
+  | EditorMoveAbs   !Position
+  | EditorResize    !Size
 
 emptyEditor :: Size -> Editor
 emptyEditor size = Editor (emptyViewport size) emptyCursor emptyContent
 
-editor :: Editor -> EvStream EditorEvent -> Now (EvStream Editor)
-editor editor evs = sample (scanlEv (\a b -> execState (editorEventS b) a) editor evs)
+editorBehavior :: Editor
+               -> EvStream EditorEvent
+               -> Behavior (EvStream Editor)
+editorBehavior editor@(Editor vpt0 cur0 con0) evs = mdo
+  cur <- cursorBehavior
+           cur0
+           (moveEvs evs)
+           (fmap (view contentShape) con)
+           (view contentShape con0)
+  con <- contentBehavior
+           con0
+           (replaceEvs evs)
+           (fmap (view cursorPos) cur)
+           (view cursorPos cur0)
+  vpt <- viewportBehavior
+           vpt0
+           cur
+           (sizeEvs evs)
+  fromUpdates editor
+    (mconcat [ fmap (set editorViewport) vpt
+             , fmap (set editorContent ) con
+             , fmap (set editorCursor  ) cur ])
+  where
+    -- TODO: use liquidhaskell's refinement types
+    sizeEvs :: EvStream EditorEvent -> EvStream Size
+    sizeEvs = filterMapEs $ \case
+      EditorResize s -> Just s
+      _ -> Nothing
 
--- | Move the cursor using shape information from the content
-moveCursorWithShape :: CursorEvent -> State Editor ()
-moveCursorWithShape evt = do
-  shape <- Shape . fmap length <$> use (editorContent . contentSeq)
-  editorCursor %= moveCursor (shape,evt)
+    moveEvs :: EvStream EditorEvent -> EvStream CursorEvent
+    moveEvs = filterMapEs $ \case
+      EditorInsert _    -> Just MoveInsert
+      EditorBackspace   -> Just MoveBackspace
+      EditorMoveDir dir -> Just (Move dir)
+      EditorMoveAbs pos -> Just (MoveAbs pos)
+      _ -> Nothing
 
--- | Update the viewport after the cursor has moved
-updateViewport :: State Editor ()
-updateViewport = do
-  c <- use (editorCursor . cursorPos)
-  editorViewport %= scrollViewport (Moved c)
-
-editorEventS :: EditorEvent -> State Editor ()
-editorEventS = \case
-  EditorMoveLeft  -> moveCursorWithShape (MoveWest True) *> updateViewport
-  EditorMoveRight -> moveCursorWithShape (MoveEast True) *> updateViewport
-  EditorMoveUp    -> moveCursorWithShape MoveNorth       *> updateViewport
-  EditorMoveDown  -> moveCursorWithShape MoveSouth       *> updateViewport
-  EditorResize newSize -> editorViewport . viewportSize .= newSize
-  EditorInsert ""      -> pure ()
-  EditorInsert str@[_] -> do
-    c <- use (editorCursor . cursorPos)
-    editorContent %= replaceContent (Replace (Range c (Size 0 0)) str)
-    moveCursorWithShape (MoveEast False)
-    updateViewport
-  EditorInsert _ -> error "Can't insert multiple character yet"
-  EditorBackspace -> do
-    c <- use (editorCursor . cursorPos)
-    moveCursorWithShape (MoveWest False)
-    c' <- use (editorCursor . cursorPos)
-    editorContent %= replaceContent (Replace (rangeFromTo c c') "")
-    updateViewport
-  EditorDelete -> do
-    c <- use (editorCursor . cursorPos)
-    editorContent %= replaceContent (Replace (Range c (Size 1 0)) "")
-
-rangeFromTo :: Position -> Position -> Range
-rangeFromTo p@(Position c r) q@(Position c' r')
-  = Range (min p q) (Size (c2w (abs (c' - c))) (r2h (abs (r' - r))))
+    replaceEvs :: EvStream EditorEvent -> EvStream ContentEvent
+    replaceEvs = filterMapEs $ \case
+      EditorInsert c  -> Just (ContentInsert c)
+      EditorBackspace -> Just ContentBackspace
+      EditorDelete    -> Just ContentDelete
+      _ -> Nothing
