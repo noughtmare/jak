@@ -1,6 +1,6 @@
 # jak
 
-Simple frp text editor for testing/learning purposes.
+Simple frp text editor for testing and learning purposes.
 
 ## Status
 
