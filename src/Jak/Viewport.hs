@@ -1,13 +1,13 @@
-module Jak.Viewport where
+module Jak.Viewport (viewport) where
 
 import Jak.Types
 import Control.FRPNow
 
-viewportBehavior :: Viewport
-                 -> EvStream Cursor
-                 -> EvStream Size
-                 -> Behavior (EvStream Viewport)
-viewportBehavior s cur size = scanlEv scrollViewport s viewportEvs
+viewport :: Viewport
+         -> EvStream Cursor
+         -> EvStream Size
+         -> Behavior (EvStream Viewport)
+viewport s cur size = scanlEv scrollViewport s viewportEvs
   where
     viewportEvs = fmap Resize size `merge` fmap (Moved . _cursorPos) cur
 

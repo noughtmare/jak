@@ -1,38 +1,31 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecursiveDo #-}
-module Jak.Editor where
+module Jak.Editor (editor) where
 
 import Jak.Types
-import Jak.Viewport (viewportBehavior)
-import Jak.Cursor   (cursorBehavior)
-import Jak.Content  (contentBehavior)
+import Jak.Viewport (viewport)
+import Jak.Cursor   (cursor)
+import Jak.Content  (content)
 
 import Control.FRPNow.Util (fromUpdates)
 import Control.Lens (view, set)
 import Control.FRPNow (EvStream, Behavior, filterMapEs)
 
---------------------------------------------------------------------------------
--- Editor
---------------------------------------------------------------------------------
-
-editorBehavior :: Editor
+editor :: Editor
                -> EvStream EditorEvent
                -> Behavior (EvStream Editor)
-editorBehavior editor@(Editor vpt0 cur0 con0) evs = mdo
-  cur <- cursorBehavior
+editor editor@(Editor vpt0 cur0 con0) evs = mdo
+  cur <- cursor
            cur0
            (moveEvs evs)
            (fmap (view contentShape) con)
            (view contentShape con0)
-  con <- contentBehavior
+  con <- content
            con0
            evs
            (fmap (view cursorPos) cur)
            (view cursorPos cur0)
-  vpt <- viewportBehavior
-           vpt0
-           cur
-           (sizeEvs evs)
+  vpt <- viewport vpt0 cur (sizeEvs evs)
   fromUpdates editor
     (mconcat [ fmap (set editorViewport) vpt
              , fmap (set editorContent ) con

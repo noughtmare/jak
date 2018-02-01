@@ -37,7 +37,7 @@ editorToPicture (Editor (Viewport (Position vc vr) (Size vw vh)) (Cursor (Positi
 myHandler :: Handler Vty.Event Vty.Picture
 myHandler = Handler $ \evs pic -> do
   escEvent <- sample (next (filterEs (== Vty.EvKey Vty.KEsc []) evs))
-  pictures <- sample (fmap editorToPicture <$> editorBehavior (emptyEditor (Size 50 50)) (filterMapEs toEditorEvent evs))
+  pictures <- sample (fmap editorToPicture <$> editor (emptyEditor (Size 50 50)) (filterMapEs toEditorEvent evs))
   pure (pic, pictures, (ExitSuccess <$ escEvent))
 
 toEditorEvent :: Vty.Event -> Maybe EditorEvent

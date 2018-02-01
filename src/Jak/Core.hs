@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RecordWildCards #-}
 module Jak.Core
   ( module Jak.Types
   , mkFrontend
@@ -23,7 +21,7 @@ repeatIO get = do
   async (forever (get >>= callback))
   pure evs
 
-mkFrontend :: forall r e m . IOFrontend r e m -> Frontend e m
+mkFrontend :: IOFrontend r e m -> Frontend e m
 mkFrontend (IOFrontend acquire release getEvent draw) = Frontend $ \f -> do
   exitCode <- bracket acquire release $ \a -> runNowMaster $ do
     evs <- repeatIO (getEvent a)

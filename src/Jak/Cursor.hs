@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-module Jak.Cursor where
+module Jak.Cursor (cursor) where
 
 import Jak.Types
 
@@ -8,12 +8,12 @@ import Control.FRPNow.Util
 import Data.Sequence (index)
 import Data.Bifunctor (bimap)
 
-cursorBehavior :: Cursor
-               -> EvStream CursorEvent
-               -> EvStream Shape
-               -> Shape
-               -> Behavior (EvStream Cursor)
-cursorBehavior a evs shapeEs shape0 = do
+cursor :: Cursor
+       -> EvStream CursorEvent
+       -> EvStream Shape
+       -> Shape
+       -> Behavior (EvStream Cursor)
+cursor a evs shapeEs shape0 = do
   shape  <- fromChanges shape0 shapeEs
   dshape <- delay evs shape0 shape
   scanlEv moveCursor a

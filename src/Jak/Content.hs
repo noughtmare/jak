@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-module Jak.Content where
+module Jak.Content (content) where
 
 import Jak.Types
 import qualified Data.Sequence as S
@@ -8,12 +8,12 @@ import Control.FRPNow
 import Control.FRPNow.Util
 import Data.Monoid ((<>))
 
-contentBehavior :: Content
-                -> EvStream EditorEvent
-                -> EvStream Position
-                -> Position
-                -> Behavior (EvStream Content)
-contentBehavior a evs posEs pos0 = do
+content :: Content
+        -> EvStream EditorEvent
+        -> EvStream Position
+        -> Position
+        -> Behavior (EvStream Content)
+content a evs posEs pos0 = do
   pos <- fromChanges pos0 posEs
   dpos <- delay evs pos0 pos
   scanlEv replaceContent a
@@ -39,6 +39,7 @@ replaceContent (Content s) (Range pos size, as) =
        b = dropUntilPosition (s2p size) b'
    in Content (a `overlap` toDoubleSeq as `overlap` b)
 
+overlap :: S.Seq (S.Seq Char) -> S.Seq (S.Seq Char) -> S.Seq (S.Seq Char)
 overlap (S.Empty     ) (b           ) = b
 overlap (a           ) (S.Empty     ) = a
 overlap ((a S.:|> aa)) ((bb S.:<| b)) = (mconcat [a, S.singleton (aa <> bb), b])
