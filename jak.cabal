@@ -13,10 +13,14 @@ cabal-version:       >=1.10
 
 executable jak
   main-is:             Main.hs
-  other-modules:       Data.Monoid.Nth
-                     , Jak.Core
+  other-modules:       Jak.Core
+                     , Jak.Types
+                     , Jak.Viewport
+                     , Jak.Cursor
+                     , Jak.Content
                      , Jak.Frontend.Vty
-                     , Jak.Content.DoubleSeq
+                     , Jak.Editor
+                     , Control.FRPNow.Util
   build-depends:       base >=4.9 && <4.11
                      , frpnow
                      , vty

@@ -15,7 +15,7 @@ import           Data.Monoid
 import           Data.Sequence                 (fromList, singleton)
 import qualified Data.Sequence          as S
 import qualified Graphics.Vty           as Vty
-import           Jak.Content.DoubleSeq
+import           Jak.Editor
 import           Jak.Core
 import           Jak.Frontend.Vty
 import           System.Exit                   (ExitCode (ExitSuccess))
