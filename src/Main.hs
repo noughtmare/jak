@@ -1,24 +1,16 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 
-import           Control.Applicative
-import           Control.Concurrent
 import           Control.FRPNow
-import           Control.Monad
-import           Control.Monad.IO.Class        (liftIO)
-import           Data.Foldable                 (toList, fold)
-import           Data.IORef
-import           Data.Maybe
-import           Data.Monoid
-import           Data.Sequence                 (fromList, singleton)
-import qualified Data.Sequence          as S
-import qualified Graphics.Vty           as Vty
-import           Jak.Editor
-import           Jak.Core
-import           Jak.Frontend.Vty
-import           System.Exit                   (ExitCode (ExitSuccess))
+import           Data.Foldable           (toList)
+import           Data.Sequence           (fromList, singleton)
+import qualified Data.Sequence    as S
+import qualified Graphics.Vty     as Vty
+import           Jak.Editor              (editor)
+import           Jak.Types
+import           Jak.Core                (run)
+import           Jak.Frontend.Vty        (vtyFrontend)
+import           System.Exit             (ExitCode (ExitSuccess))
 
 editorToPicture :: Editor -> Vty.Picture
 editorToPicture (Editor (Viewport (Position vc vr) (Size vw vh)) (Cursor (Position cc cr) _) (Content con))
@@ -26,12 +18,11 @@ editorToPicture (Editor (Viewport (Position vc vr) (Size vw vh)) (Cursor (Positi
  where
   contentImage =
     mconcat
-      . map
+      $ map
           ( Vty.string Vty.defAttr . toList . S.take (fromIntegral vw) . S.drop
             (fromIntegral vc)
           )
-      . (toList . S.take (fromIntegral vh) . S.drop (fromIntegral vr))
-      $ con
+      $ (toList . S.take (fromIntegral vh) . S.drop (fromIntegral vr)) con
   actualCursor = Vty.Cursor (fromIntegral (cc - vc)) (fromIntegral (cr - vr))
 
 myHandler :: Handler Vty.Event Vty.Picture
