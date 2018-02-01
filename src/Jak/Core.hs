@@ -1,6 +1,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
-module Jak.Core where
+module Jak.Core
+  ( module Jak.Types
+  , mkFrontend
+  , run)
+  where
+
+import Jak.Types
 
 import Control.FRPNow
 import Data.Maybe
@@ -10,25 +16,6 @@ import Control.Concurrent
 import Control.Exception (bracket)
 import System.Exit (ExitCode, exitWith)
 import Control.Applicative
-
-newtype Frontend event model = Frontend
-  { runNow :: (EvStream event -> Now (model, EvStream model, Event ExitCode)) -> IO () }
-
-emptyFrontend :: Frontend e m
-emptyFrontend = Frontend $ \f -> runNowMaster ((\(_,_,x) -> x) <$> f mempty) >>= exitWith
-
-newtype Handler event model = Handler
-  { handle :: EvStream event -> model -> Now (model, EvStream model, Event ExitCode) }
-
-emptyHandler :: Handler e m
-emptyHandler = Handler $ \_ m -> pure (m, mempty, never)
-
-data IOFrontend resource event model = IOFrontend
-  { acquire  :: IO resource
-  , release  :: resource -> IO ()
-  , getEvent :: resource -> IO event
-  , draw     :: resource -> model -> IO ()
-  }
 
 repeatIO :: IO a -> Now (EvStream a)
 repeatIO get = do
