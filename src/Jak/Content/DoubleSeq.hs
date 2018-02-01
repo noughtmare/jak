@@ -42,7 +42,6 @@ module Jak.Content.DoubleSeq where
 --
 -- TODO:
 --   - Split this module into multiple modules, one for each section.
---   - Fix bugs (there are still some major bugs left)
 
 import Control.Lens
 import Control.Applicative
@@ -139,7 +138,10 @@ data Viewport = Viewport
   { _viewportPosition :: !Position
   , _viewportSize     :: !Size
   }
-makeLenses ''Viewport
+viewportPosition :: Lens' Viewport Position
+viewportPosition = lens _viewportPosition (\x y -> x { _viewportPosition = y })
+viewportSize :: Lens' Viewport Size
+viewportSize     = lens _viewportSize     (\x y -> x { _viewportSize     = y })
 
 data ViewportEvent
   = Resize !Size
@@ -186,7 +188,10 @@ data Cursor = Cursor
   { _cursorPos :: !Position
   , _cursorVirtCol :: !VirtualColumn
   } deriving Eq
-makeLenses ''Cursor
+cursorPos :: Lens' Cursor Position
+cursorPos     = lens _cursorPos     (\x y -> x { _cursorPos     = y })
+cursorVirtCol :: Lens' Cursor VirtualColumn
+cursorVirtCol = lens _cursorVirtCol (\x y -> x { _cursorVirtCol = y })
 
 data CursorEvent
   = Move !Direction
@@ -217,29 +222,26 @@ cursorBehavior a evs shapeEs shape0 = do
       MoveInsert -> False
       _ -> True
 
--- FIXME: clean up ugly code
 moveCursor :: Cursor -> (Shape,CursorEvent) -> Cursor
 moveCursor (Cursor (Position c r) v) (Shape shape, move) =
-  p
+  case move of
+    Move North    -> clampCol $ Position (v2c v) (max 0 (r - 1))
+    Move East     -> mkCursor $ Position (min lineLength (c + 1)) r
+    Move South    -> clampCol $ Position (v2c v) (min (R (length shape - 1)) (r + 1))
+    Move West     -> mkCursor $ Position (max 0 (c - 1)) r
+    MoveAbs p     -> clampCol (clampRow p)
+    MoveBackspace
+      | c > 0 -> mkCursor $ Position (c - 1) r
+      | r > 0 -> mkCursor $ Position (C (S.index shape (fromIntegral (r - 1)))) (r - 1)
+      | otherwise -> mkCursor $ Position 0 0
+    MoveInsert
+      | c < lineLength -> mkCursor $ Position (c + 1) r
+      | otherwise      -> mkCursor $ Position 0 (r + 1)
   where
-    clamp shape (Position cc rr) = let rr' = min (R (length shape)) rr in Cursor (Position (min (C (S.index shape (fromIntegral rr'))) cc) rr') (c2v c)
+    clampCol (Position cc rr) = Cursor (Position (max 0 (min cc (C (S.index shape (fromIntegral rr))))) rr) (c2v cc)
+    clampRow (Position cc rr) = Position cc (min (R (length shape - 1)) (max 0 rr))
     lineLength = C $ S.index shape (fromIntegral r)
-    contentLength = R $ length shape
-    lineLength' = C $ S.index shape (fromIntegral r)
     mkCursor p@(Position c _) = Cursor p (c2v c)
-    p = case move of
-      Move North    -> clamp shape $ Position (v2c v) (max 0 (r - 1))
-      Move East     -> clamp shape $ Position (min lineLength (c + 1)) r
-      Move South    -> clamp shape $ Position (v2c v) (min (contentLength - 1) (r + 1))
-      Move West     -> clamp shape $ Position (max 0 (c - 1)) r
-      MoveAbs p     -> clamp shape p
-      MoveBackspace
-        | c > 0 -> mkCursor $ Position (c - 1) r
-        | r > 0 -> mkCursor $ Position (C (S.index shape (fromIntegral (r - 1)))) (r - 1)
-        | otherwise -> mkCursor $ Position 0 0
-      MoveInsert
-        | c < lineLength' -> mkCursor $ Position (c + 1) r
-        | otherwise       -> mkCursor $ Position 0       (r + 1)
 
 --------------------------------------------------------------------------------
 -- Content (the actual DoubleSeq)
@@ -248,7 +250,8 @@ moveCursor (Cursor (Position c r) v) (Shape shape, move) =
 newtype Content = Content
   { _contentSeq :: S.Seq (S.Seq Char)
   }
-makeLenses ''Content
+contentSeq :: Lens' Content (S.Seq (S.Seq Char))
+contentSeq = lens _contentSeq (const Content)
 
 -- virtual getter
 contentShape :: Getter Content Shape
@@ -256,19 +259,15 @@ contentShape f = contramap s2a . f . s2a
   where
     s2a = Shape . fmap length . view contentSeq
 
+emptyContent :: Content
 emptyContent = Content S.empty
 
 overlap (S.Empty     ) (b           ) = b
 overlap (a           ) (S.Empty     ) = a
 overlap ((a S.:|> aa)) ((bb S.:<| b)) = (mconcat [a, S.singleton (aa <> bb), b])
 
-data ContentEvent
-  = ContentInsert !Char
-  | ContentBackspace
-  | ContentDelete
-
 contentBehavior :: Content
-                -> EvStream ContentEvent
+                -> EvStream EditorEvent
                 -> EvStream Position
                 -> Position
                 -> Behavior (EvStream Content)
@@ -280,15 +279,17 @@ contentBehavior a evs posEs pos0 = do
     $ bimap (f dpos) (f pos)
     $ partitionEs isBefore evs
   where
-    f p = (fmap mkReplace p <@@>)
+    f p = filterMapEs (uncurry mkReplace) . (fmap (,) p <@@>)
 
     isBefore = \case
-      ContentInsert _ -> True
-      _               -> False
+      EditorInsert _ -> True
+      _              -> False
+
     mkReplace p = \case
-      ContentInsert c  -> (Range p (Size 1 0), [c])
-      ContentBackspace -> (Range p (Size 1 0), "")
-      ContentDelete    -> (Range p (Size 1 0), "")
+      EditorInsert c  -> Just (Range p (Size 0 0), [c])
+      EditorBackspace -> Just (Range p (Size 1 0), "")
+      EditorDelete    -> Just (Range p (Size 1 0), "")
+      _ -> Nothing
 
 replaceContent :: Content -> (Range, String) -> Content
 replaceContent (Content s) (Range pos size, as) =
@@ -325,7 +326,12 @@ data Editor = Editor
   , _editorCursor   :: !Cursor
   , _editorContent  :: !Content
   }
-makeLenses ''Editor
+editorViewport :: Lens' Editor Viewport
+editorViewport = lens _editorViewport (\x y -> x { _editorViewport = y })
+editorCursor :: Lens' Editor Cursor
+editorCursor   = lens _editorCursor   (\x y -> x { _editorCursor   = y })
+editorContent :: Lens' Editor Content
+editorContent  = lens _editorContent  (\x y -> x { _editorContent  = y })
 
 data EditorEvent
   = EditorInsert    !Char
@@ -349,7 +355,7 @@ editorBehavior editor@(Editor vpt0 cur0 con0) evs = mdo
            (view contentShape con0)
   con <- contentBehavior
            con0
-           (replaceEvs evs)
+           evs
            (fmap (view cursorPos) cur)
            (view cursorPos cur0)
   vpt <- viewportBehavior
@@ -361,7 +367,6 @@ editorBehavior editor@(Editor vpt0 cur0 con0) evs = mdo
              , fmap (set editorContent ) con
              , fmap (set editorCursor  ) cur ])
   where
-    -- TODO: use liquidhaskell's refinement types
     sizeEvs :: EvStream EditorEvent -> EvStream Size
     sizeEvs = filterMapEs $ \case
       EditorResize s -> Just s
@@ -373,11 +378,4 @@ editorBehavior editor@(Editor vpt0 cur0 con0) evs = mdo
       EditorBackspace   -> Just MoveBackspace
       EditorMoveDir dir -> Just (Move dir)
       EditorMoveAbs pos -> Just (MoveAbs pos)
-      _ -> Nothing
-
-    replaceEvs :: EvStream EditorEvent -> EvStream ContentEvent
-    replaceEvs = filterMapEs $ \case
-      EditorInsert c  -> Just (ContentInsert c)
-      EditorBackspace -> Just ContentBackspace
-      EditorDelete    -> Just ContentDelete
       _ -> Nothing

@@ -51,6 +51,7 @@ toEditorEvent = \case
   Vty.EvKey Vty.KRight    [] -> Just (EditorMoveDir East)
   Vty.EvKey Vty.KUp       [] -> Just (EditorMoveDir North)
   Vty.EvKey Vty.KDown     [] -> Just (EditorMoveDir South)
+  Vty.EvMouseDown c r Vty.BLeft [] -> Just (EditorMoveAbs (Position (C c) (R r)))
   _                          -> Nothing
 
 aSquare n = fromList (unlines (replicate n (replicate n 'a')))
