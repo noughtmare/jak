@@ -11,6 +11,13 @@ import System.IO
 vtyFrontend :: Vty.Config -> Frontend Vty.Event Vty.Picture
 vtyFrontend cfg = mkFrontend $ IOFrontend
   (Vty.mkVty cfg <* putStrLn requestMouseEvents)
-  (\vty -> Vty.shutdown vty <* putStrLn disableMouseEvents)
+  (\vty -> putStrLn disableMouseEvents *> Vty.shutdown vty)
+  Vty.nextEvent
+  Vty.update
+
+vtyFrontend' :: Vty.Vty -> Frontend Vty.Event Vty.Picture
+vtyFrontend' vty = mkFrontend $ IOFrontend
+  (vty <$ putStrLn requestMouseEvents)
+  (\vty -> putStrLn disableMouseEvents *> Vty.shutdown vty)
   Vty.nextEvent 
   Vty.update

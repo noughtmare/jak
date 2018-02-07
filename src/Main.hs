@@ -9,7 +9,7 @@ import qualified Graphics.Vty     as Vty
 import           Jak.Editor              (editor)
 import           Jak.Types
 import           Jak.Core                (run)
-import           Jak.Frontend.Vty        (vtyFrontend)
+import           Jak.Frontend.Vty        (vtyFrontend')
 import           System.Exit             (ExitCode (ExitSuccess))
 
 editorToPicture :: Editor -> Vty.Picture
@@ -25,10 +25,10 @@ editorToPicture (Editor (Viewport (Position vc vr) (Size vw vh)) (Cursor (Positi
       $ (toList . S.take (fromIntegral vh) . S.drop (fromIntegral vr)) con
   actualCursor = Vty.Cursor (fromIntegral (cc - vc)) (fromIntegral (cr - vr))
 
-myHandler :: Handler Vty.Event Vty.Picture
-myHandler = Handler $ \evs pic -> do
+myHandler :: Size -> Handler Vty.Event Vty.Picture
+myHandler s = Handler $ \evs pic -> do
   escEvent <- sample (next (filterEs (== Vty.EvKey Vty.KEsc []) evs))
-  pictures <- sample (fmap editorToPicture <$> editor (emptyEditor (Size 50 50)) (filterMapEs toEditorEvent evs))
+  pictures <- sample (fmap editorToPicture <$> editor (emptyEditor s) (filterMapEs toEditorEvent evs))
   pure (pic, pictures, (ExitSuccess <$ escEvent))
 
 toEditorEvent :: Vty.Event -> Maybe EditorEvent
@@ -52,6 +52,8 @@ aLine' n = singleton (fromList (replicate n 'a'))
 main :: IO ()
 main = do
   cfg <- Vty.standardIOConfig
-  run (vtyFrontend (cfg { Vty.mouseMode = Just True }))
-      myHandler
+  vty <- Vty.mkVty (cfg { Vty.mouseMode = Just True })
+  s <- (\(w,h) -> Size (W w) (H h)) <$> Vty.displayBounds (Vty.outputIface vty)
+  run (vtyFrontend' vty)
+      (myHandler s)
       ((Vty.picForImage mempty) { Vty.picCursor = Vty.Cursor 0 0 })
