@@ -12,19 +12,19 @@ import Control.Lens (view, set)
 import Control.FRPNow (EvStream, Behavior, filterMapEs)
 
 editor :: Editor
-               -> EvStream EditorEvent
-               -> Behavior (EvStream Editor)
+       -> EvStream EditorEvent
+       -> Behavior (EvStream Editor)
 editor editor@(Editor vpt0 cur0 con0) evs = mdo
   cur <- cursor
            cur0
-           (moveEvs evs)
-           (fmap (view contentShape) con)
+           evs
            (view contentShape con0)
+           (fmap (view contentShape) con)
   con <- content
            con0
            evs
-           (fmap (view cursorPos) cur)
            (view cursorPos cur0)
+           (fmap (view cursorPos) cur)
   vpt <- viewport vpt0 cur (sizeEvs evs)
   fromUpdates editor
     (mconcat [ fmap (set editorViewport) vpt
@@ -34,12 +34,4 @@ editor editor@(Editor vpt0 cur0 con0) evs = mdo
     sizeEvs :: EvStream EditorEvent -> EvStream Size
     sizeEvs = filterMapEs $ \case
       EditorResize s -> Just s
-      _ -> Nothing
-
-    moveEvs :: EvStream EditorEvent -> EvStream CursorEvent
-    moveEvs = filterMapEs $ \case
-      EditorInsert _    -> Just MoveInsert
-      EditorBackspace   -> Just MoveBackspace
-      EditorMoveDir dir -> Just (Move dir)
-      EditorMoveAbs pos -> Just (MoveAbs pos)
       _ -> Nothing

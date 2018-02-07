@@ -10,10 +10,10 @@ import Data.Monoid ((<>))
 
 content :: Content
         -> EvStream EditorEvent
-        -> EvStream Position
         -> Position
+        -> EvStream Position
         -> Behavior (EvStream Content)
-content a evs posEs pos0 = do
+content a evs pos0 posEs = do
   pos <- fromChanges pos0 posEs
   dpos <- delay evs pos0 pos
   scanlEv replaceContent a
@@ -34,28 +34,33 @@ content a evs posEs pos0 = do
       _ -> Nothing
 
 replaceContent :: Content -> (Range, String) -> Content
-replaceContent (Content s) (Range pos size, as) =
-   let (a,b') = splitAtPosition pos s
-       b = dropUntilPosition (s2p size) b'
-   in Content (a `overlap` toDoubleSeq as `overlap` b)
+replaceContent (Content s) (Range pos@(Position cc _) size, as) =
+  Content (a `overlap` c `overlap` b)
+  where
+    (a,b') = splitAtPosition pos s
+    b = dropUntilPosition (s2p size) b'
+    c = toDoubleSeq as
 
 overlap :: S.Seq (S.Seq Char) -> S.Seq (S.Seq Char) -> S.Seq (S.Seq Char)
-overlap (S.Empty     ) (b           ) = b
-overlap (a           ) (S.Empty     ) = a
-overlap ((a S.:|> aa)) ((bb S.:<| b)) = (mconcat [a, S.singleton (aa <> bb), b])
+overlap (S.Empty   ) (b         ) = b
+overlap (a         ) (S.Empty   ) = a
+overlap (a S.:|> aa) (bb S.:<| b) = (mconcat [a, S.singleton (aa <> bb), b])
 
 dropUntilPosition :: Position -> S.Seq (S.Seq Char) -> S.Seq (S.Seq Char)
 dropUntilPosition (Position (C c) (R r)) = f . S.drop r
   where
     f S.Empty = S.Empty
-    f (x S.:<| xs) = S.drop c x S.:<| xs
+    f (x S.:<| xs)
+      | c > length x = xs
+      | otherwise = S.drop c x S.:<| xs
 
 splitAtPosition :: Position
                 -> S.Seq (S.Seq Char)
                 -> (S.Seq (S.Seq Char), S.Seq (S.Seq Char))
 splitAtPosition (Position (C col) (R row)) s = case S.splitAt row s of
-  (a,b S.:<| c) -> let (d,e) = S.splitAt col b in (a S.:|> d, e S.:<| c)
-  (a,S.Empty) -> (a,S.Empty)
+  (a,b S.:<| c) -> let (d,e) = S.splitAt col b
+                   in (a S.:|> d, e S.:<| c)
+  a -> a
 
 toDoubleSeq :: String -> S.Seq (S.Seq Char)
 toDoubleSeq = S.fromList . map S.fromList . lines'

@@ -110,10 +110,6 @@ viewportPosition = lens _viewportPosition (\x y -> x { _viewportPosition = y })
 viewportSize :: Lens' Viewport Size
 viewportSize     = lens _viewportSize     (\x y -> x { _viewportSize     = y })
 
-data ViewportEvent
-  = Resize !Size
-  | Moved !Position
-
 emptyViewport :: Size -> Viewport
 emptyViewport = Viewport (Position 0 0)
 
@@ -125,12 +121,6 @@ cursorPos :: Lens' Cursor Position
 cursorPos     = lens _cursorPos     (\x y -> x { _cursorPos     = y })
 cursorVirtCol :: Lens' Cursor VirtualColumn
 cursorVirtCol = lens _cursorVirtCol (\x y -> x { _cursorVirtCol = y })
-
-data CursorEvent
-  = Move !Direction
-  | MoveAbs !Position
-  | MoveInsert
-  | MoveBackspace
 
 emptyCursor :: Cursor
 emptyCursor = Cursor (Position 0 0) 0
@@ -148,7 +138,7 @@ contentShape f = contramap s2a . f . s2a
     s2a = Shape . fmap length . view contentSeq
 
 emptyContent :: Content
-emptyContent = Content S.empty
+emptyContent = Content (S.singleton S.empty)
 
 data Editor = Editor
   { _editorViewport :: !Viewport
@@ -172,4 +162,3 @@ data EditorEvent
 
 emptyEditor :: Size -> Editor
 emptyEditor size = Editor (emptyViewport size) emptyCursor emptyContent
-

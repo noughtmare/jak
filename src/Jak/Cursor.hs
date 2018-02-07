@@ -9,41 +9,67 @@ import Data.Sequence (index)
 import Data.Bifunctor (bimap)
 
 cursor :: Cursor
-       -> EvStream CursorEvent
-       -> EvStream Shape
+       -> EvStream EditorEvent
        -> Shape
+       -> EvStream Shape
        -> Behavior (EvStream Cursor)
-cursor a evs shapeEs shape0 = do
+cursor cur0 evs shape0 shapeEs = do
   shape  <- fromChanges shape0 shapeEs
   dshape <- delay evs shape0 shape
-  scanlEv moveCursor a
+  scanlFilterEv (\a (b,c) -> if changesCursor a b c then Just (moveCursor a b c) else Nothing) cur0
     $ uncurry merge
     $ bimap (f dshape) (f shape)
-    $ partitionEs isBefore evs
+    $ partitionEs isBefore
+    $ filterEs isCursorEvent evs
   where
+    changesCursor :: Cursor -> Shape -> EditorEvent -> Bool
+    changesCursor (Cursor p _) s = \case
+      EditorMoveDir d -> canMove p s d
+      EditorBackspace -> canBackspace p
+      EditorMoveAbs p' -> p /= p'
+      e -> True
     f s = (fmap (,) s <@@>)
     isBefore = \case
-      MoveInsert -> False
+      EditorInsert _ -> False
       _ -> True
+    isCursorEvent = \case
+      EditorMoveDir _ -> True
+      EditorMoveAbs _ -> True
+      EditorBackspace -> True
+      EditorInsert _  -> True
+      _               -> False
 
-moveCursor :: Cursor -> (Shape,CursorEvent) -> Cursor
-moveCursor (Cursor (Position c r) v) (Shape shape, move) =
+canBackspace :: Position -> Bool
+canBackspace (Position c r) = r > 0 || c > 0
+
+canMove :: Position -> Shape -> Direction -> Bool
+canMove (Position c r) (Shape s) = \case
+  North -> r > 0
+  East  -> C (index s (fromIntegral r)) > c
+  South -> R (length s) - 1 > r
+  West  -> c > 0
+
+moveCursor :: Cursor -> Shape -> EditorEvent -> Cursor
+moveCursor (Cursor (Position c r) v) (Shape shape) move =
   case move of
-    Move North    -> clampCol $ Position (v2c v) (max 0 (r - 1))
-    Move East     -> mkCursor $ Position (min lineLength (c + 1)) r
-    Move South    -> clampCol $ Position (v2c v) (min (R (length shape - 1)) (r + 1))
-    Move West     -> mkCursor $ Position (max 0 (c - 1)) r
-    MoveAbs p     -> clampCol (clampRow p)
-    MoveBackspace
-      | c > 0 -> mkCursor $ Position (c - 1) r
-      | r > 0 -> mkCursor $ Position (C (index shape (fromIntegral (r - 1)))) (r - 1)
-      | otherwise -> mkCursor $ Position 0 0
-    MoveInsert
-      | c < lineLength -> mkCursor $ Position (c + 1) r
-      | otherwise      -> mkCursor $ Position 0 (r + 1)
+    EditorMoveDir North -> clampCol $ Position (v2c v) (r - 1)
+    EditorMoveDir East  -> mkCursor $ Position (c + 1) r
+    EditorMoveDir South -> clampCol $ Position (v2c v) (r + 1)
+    EditorMoveDir West  -> mkCursor $ Position (c - 1) r
+    EditorMoveAbs p     -> clampCol (clampRow p)
+    EditorBackspace
+      | c > 0           -> mkCursor $ Position (c - 1) r
+      | r > 0           -> mkCursor $ Position (C (index shape (fromIntegral (r - 1)))) (r - 1)
+    EditorInsert '\n'   -> mkCursor $ Position 0 (r + 1)
+    EditorInsert _      -> mkCursor $ Position (c + 1) r
   where
-    clampCol (Position cc rr) = Cursor (Position (max 0 (min cc (C (index shape (fromIntegral rr))))) rr) (c2v cc)
-    clampRow (Position cc rr) = Position cc (min (R (length shape - 1)) (max 0 rr))
-    lineLength = C $ index shape (fromIntegral r)
+    between :: Ord a => a -> a -> a -> a
+    between low high a
+      | a < low   = low
+      | a > high  = high
+      | otherwise = a
+    clampCol (Position cc rr) = Cursor (Position (between 0 cc (C (index shape (fromIntegral rr)))) rr) (c2v cc)
+    clampRow (Position cc rr) = Position cc (between 0 (documentLength - 1) rr)
     mkCursor p@(Position c _) = Cursor p (c2v c)
-
+    lineLength = C $ index shape (fromIntegral r)
+    documentLength = R $ length shape
