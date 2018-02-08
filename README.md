@@ -2,6 +2,8 @@
 
 Simple frp text editor for testing and learning purposes.
 
+![](jak-logo.svg)
+
 ## Status
 
 The text editor can currently edit and show text.
