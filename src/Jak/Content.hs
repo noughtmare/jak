@@ -2,10 +2,12 @@
 module Jak.Content (content) where
 
 import Jak.Types
+import Control.FRPNow.Util
+
 import qualified Data.Sequence as S
+import Data.Sequence (Seq (..))
 import Data.Bifunctor (bimap)
 import Control.FRPNow
-import Control.FRPNow.Util
 import Data.Monoid ((<>))
 
 content :: Content
@@ -41,28 +43,28 @@ replaceContent (Content s) (Range pos@(Position cc _) size, as) =
     b = dropUntilPosition (s2p size) b'
     c = toDoubleSeq as
 
-overlap :: S.Seq (S.Seq Char) -> S.Seq (S.Seq Char) -> S.Seq (S.Seq Char)
-overlap (S.Empty   ) (b         ) = b
-overlap (a         ) (S.Empty   ) = a
-overlap (a S.:|> aa) (bb S.:<| b) = (mconcat [a, S.singleton (aa <> bb), b])
+overlap :: Seq (Seq Char) -> Seq (Seq Char) -> Seq (Seq Char)
+overlap (Empty   ) (b       ) = b
+overlap (a       ) (Empty   ) = a
+overlap (a :|> aa) (bb :<| b) = mconcat [a, S.singleton (aa <> bb), b]
 
-dropUntilPosition :: Position -> S.Seq (S.Seq Char) -> S.Seq (S.Seq Char)
+dropUntilPosition :: Position -> Seq (Seq Char) -> Seq (Seq Char)
 dropUntilPosition (Position (C c) (R r)) = f . S.drop r
   where
-    f S.Empty = S.Empty
-    f (x S.:<| xs)
+    f Empty = Empty
+    f (x :<| xs)
       | c > length x = xs
-      | otherwise = S.drop c x S.:<| xs
+      | otherwise = S.drop c x :<| xs
 
 splitAtPosition :: Position
-                -> S.Seq (S.Seq Char)
-                -> (S.Seq (S.Seq Char), S.Seq (S.Seq Char))
+                -> Seq (Seq Char)
+                -> (Seq (Seq Char), Seq (Seq Char))
 splitAtPosition (Position (C col) (R row)) s = case S.splitAt row s of
-  (a,b S.:<| c) -> let (d,e) = S.splitAt col b
-                   in (a S.:|> d, e S.:<| c)
+  (a,b :<| c) -> let (d,e) = S.splitAt col b
+                 in (a :|> d, e :<| c)
   a -> a
 
-toDoubleSeq :: String -> S.Seq (S.Seq Char)
+toDoubleSeq :: String -> Seq (Seq Char)
 toDoubleSeq = S.fromList . map S.fromList . lines'
   where
     -- Proper lines implementation ;)

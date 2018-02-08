@@ -13,17 +13,18 @@ import           Jak.Frontend.Vty        (vtyFrontend')
 import           System.Exit             (ExitCode (ExitSuccess))
 
 editorToPicture :: Editor -> Vty.Picture
-editorToPicture (Editor (Viewport (Position vc vr) (Size vw vh)) (Cursor (Position cc cr) _) (Content con))
-  = Vty.Picture actualCursor [contentImage] Vty.ClearBackground
- where
-  contentImage =
-    mconcat
-      $ map
-          ( Vty.string Vty.defAttr . toList . S.take (fromIntegral vw) . S.drop
-            (fromIntegral vc)
-          )
-      $ (toList . S.take (fromIntegral vh) . S.drop (fromIntegral vr)) con
-  actualCursor = Vty.Cursor (fromIntegral (cc - vc)) (fromIntegral (cr - vr))
+editorToPicture (Editor (Viewport (Position vc vr) (Size vw vh))
+                        (Cursor (Position cc cr) _)
+                        (Content con)) =
+  Vty.Picture actualCursor [contentImage] Vty.ClearBackground
+  where
+    contentImage =
+      mconcat
+        $ map
+            (Vty.string Vty.defAttr . toList . S.take (fromIntegral vw) . S.drop
+              (fromIntegral vc))
+        $ (toList . S.take (fromIntegral vh) . S.drop (fromIntegral vr)) con
+    actualCursor = Vty.Cursor (fromIntegral (cc - vc)) (fromIntegral (cr - vr))
 
 myHandler :: Size -> Handler Vty.Event Vty.Picture
 myHandler s = Handler $ \evs pic -> do

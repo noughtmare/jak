@@ -25,11 +25,11 @@ editor editor@(Editor vpt0 cur0 con0) evs = mdo
            evs
            (view cursorPos cur0)
            (fmap (view cursorPos) cur)
-  vpt <- viewport vpt0 cur (sizeEvs evs)
-  fromUpdates editor
-    (mconcat [ fmap (set editorViewport) vpt
-             , fmap (set editorContent ) con
-             , fmap (set editorCursor  ) cur ])
+  vpt <- viewport vpt0 (fmap (view cursorPos) cur) (sizeEvs evs)
+  fromUpdates editor $
+    mconcat [ fmap (set editorViewport) vpt
+            , fmap (set editorContent ) con
+            , fmap (set editorCursor  ) cur ]
   where
     sizeEvs :: EvStream EditorEvent -> EvStream Size
     sizeEvs = filterMapEs $ \case
