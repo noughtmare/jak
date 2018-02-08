@@ -1,8 +1,6 @@
-# jak
+![](jak-logo.svg)
 
 Simple frp text editor for testing and learning purposes.
-
-![](jak-logo.svg)
 
 ## Status
 
