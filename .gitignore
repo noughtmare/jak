@@ -4,3 +4,4 @@ dist-newstyle/
 cabal.sandbox.config
 cabal.project.local
 .ghci
+.ghc.environment*

@@ -1,7 +1,9 @@
 name:                jak
-version:             0.3.0.0
-synopsis:            Basic text editor
-description:         Jak is a basic text editor intended to test experimental features and run benchmarks.
+version:             0.4.0.0
+synopsis:            A basic text editor
+description:
+  Jak is a basic text editor intended to test experimental features and run
+  benchmarks.
 license:             AGPL-3
 license-file:        LICENSE
 author:              Jaro Reinders
@@ -13,20 +15,15 @@ cabal-version:       >=1.10
 
 executable jak
   main-is:             Main.hs
-  other-modules:       Jak.Core
-                     , Jak.Types
+  other-modules:       Jak.Types
                      , Jak.Viewport
                      , Jak.Cursor
                      , Jak.Content
-                     , Jak.Frontend.Vty
                      , Jak.Editor
-                     , Control.FRPNow.Util
-  build-depends:       base >=4.9 && <4.11
-                     , frpnow >= 0.18 && < 1
-                     , vty >= 5.19 && < 6
-                     , containers >= 0.5.10.2 && < 0.6
-                     , lens >= 4.16 && < 5
-                     , deepseq
+  build-depends:       base       >= 4.12.0 && < 4.13
+                     , Yampa      >= 0.13   && < 0.14
+                     , containers >= 0.06.0 && < 0.07
+                     , vty        >= 5.25.1 && < 5.26
   hs-source-dirs:      src
   default-language:    Haskell2010
-  ghc-options:         -O2 -threaded
+  ghc-options:         -O2 -threaded -Wall

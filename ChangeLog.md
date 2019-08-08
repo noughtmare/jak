@@ -1,5 +1,10 @@
 # Revision history for jak
 
+## 0.4.0.0 -- 2019-08-08
+
+* Use Yampa instead of frpnow
+* Stop using lens
+
 ## 0.3.0.0 -- 2018-02-01
 
 * Properly implement event handling with frp,

@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE Arrows #-}
 module Jak.Editor (editor) where
 
 import Jak.Types
@@ -7,31 +7,17 @@ import Jak.Viewport (viewport)
 import Jak.Cursor   (cursor)
 import Jak.Content  (content)
 
-import Control.FRPNow.Util (fromUpdates)
-import Control.Lens (view, set)
-import Control.FRPNow (EvStream, Behavior, filterMapEs)
+import FRP.Yampa
 
-editor :: Editor
-       -> EvStream EditorEvent
-       -> Behavior (EvStream Editor)
-editor editor@(Editor vpt0 cur0 con0) evs = mdo
-  cur <- cursor
-           cur0
-           evs
-           (view contentShape con0)
-           (fmap (view contentShape) con)
-  con <- content
-           con0
-           evs
-           (view cursorPos cur0)
-           (fmap (view cursorPos) cur)
-  vpt <- viewport vpt0 (fmap (view cursorPos) cur) (sizeEvs evs)
-  fromUpdates editor $
-    mconcat [ fmap (set editorViewport) vpt
-            , fmap (set editorContent ) con
-            , fmap (set editorCursor  ) cur ]
+editor :: Editor -> SF (Event EditorEvent) (Maybe Editor)
+editor x@(Editor v0 cu0 co0) = loopPre x $
+  proc (e, x'@(Editor _v' _cu' co')) -> case e of
+    Event EditorExit -> returnA -< (Nothing, x')
+    _ -> do
+      cu <- cursor  cu0 -< (e, contentShape co')
+      co <- content co0 -< (e, cursorPosition cu)
+      v  <- viewport v0 -< (cursorPosition cu, e >>= projectSize)
+      first (arr Just) -< dup (Editor v cu co)
   where
-    sizeEvs :: EvStream EditorEvent -> EvStream Size
-    sizeEvs = filterMapEs $ \case
-      EditorResize s -> Just s
-      _ -> Nothing
+    projectSize (EditorResize s) = Event s
+    projectSize _ = NoEvent
