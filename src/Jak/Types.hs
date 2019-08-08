@@ -73,34 +73,21 @@ c2v = fromIntegral
 -- The line lengths of the content
 newtype Shape = Shape (S.Seq Int)
 
-contentShape :: Content -> Shape
-contentShape = Shape . fmap S.length . contentSeq
+class HasShape a where
+  projectShape :: a -> Shape
 
-data Viewport = Viewport
-  { viewportPosition :: !Position
-  , viewportSize     :: !Size
-  }
+class HasPosition a where
+  projectPosition :: a -> Position
 
-data Cursor = Cursor
-  { cursorPosition :: !Position
-  , cursorVirtualColumn :: !VirtualColumn
-  } deriving Eq
+class Render a where
+  renderCursor :: a -> Position
+  renderContent :: a -> [String]
 
-newtype Content = Content
-  { contentSeq :: S.Seq (S.Seq Char)
-  }
+class HasView a where
+  projectView :: a -> (Position, Size)
 
-data Editor = Editor
-  { editorViewport :: !Viewport
-  , editorCursor   :: !Cursor
-  , editorContent  :: !Content
-  }
+class ViewContent a where
+  viewContent :: a -> (Position, Size) -> [String]
 
-data EditorEvent
-  = EditorInsert    !Char
-  | EditorBackspace
-  | EditorDelete
-  | EditorMoveDir   !Direction
-  | EditorMoveAbs   !Position
-  | EditorResize    !Size
-  | EditorExit
+class ViewCursor a where
+  viewCursor :: a -> (Position, Size) -> Position

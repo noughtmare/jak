@@ -2,27 +2,18 @@
 module Main where
 
 import           FRP.Yampa
-import           Data.Foldable            (toList)
-import qualified Data.Sequence            as S
 import qualified Graphics.Vty             as Vty
 import qualified Graphics.Vty.Input.Mouse as Vty
-import           Jak.Editor               (editor)
 import           Jak.Types
+import           Jak.Editor
 import           Control.Monad            (when)
 import           Control.Exception        (bracket)
 
-editorToPicture :: Editor -> Vty.Picture
-editorToPicture (Editor (Viewport (Position vc vr) (Size vw vh))
-                        (Cursor (Position cc cr) _)
-                        (Content con)) =
-  Vty.Picture actualCursor [contentImage] Vty.ClearBackground
+renderPicture :: Render a => a -> Vty.Picture
+renderPicture ed = Vty.Picture cursor [image] Vty.ClearBackground
   where
-    contentImage =
-      mconcat $ map
-        (Vty.string Vty.defAttr . toList . S.take (fromIntegral vw) . S.drop
-           (fromIntegral vc))
-        $ toList $ S.take (fromIntegral vh) $ S.drop (fromIntegral vr) con
-    actualCursor = Vty.Cursor (fromIntegral (cc - vc)) (fromIntegral (cr - vr))
+    image = foldMap (Vty.string Vty.defAttr) (renderContent ed)
+    cursor = let (Position (C x) (R y)) = renderCursor ed in Vty.Cursor x y
 
 toEditorEvent :: Vty.Event -> Maybe EditorEvent
 toEditorEvent = \case
@@ -62,5 +53,5 @@ main = do
       (\_ -> (\e -> (1, Just (maybeToEvent (toEditorEvent e)))) <$> Vty.nextEvent vty)
       (\b ed -> case ed of
         Nothing -> return True
-        Just ed' -> False <$ when b (Vty.update vty (editorToPicture ed')))
-      (editor (Editor (Viewport (Position 0 0) s) (Cursor (Position 0 0) (V 0)) (Content (S.singleton S.empty)))))
+        Just ed' -> False <$ when b (Vty.update vty (renderPicture ed')))
+      (editor (emptyEditor s)))

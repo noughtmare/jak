@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE Arrows #-}
 
-module Jak.Content (content) where
+module Jak.Content (Content, ContentEvent (..), content, emptyContent) where
 
 import Prelude hiding ((.), id)
 import Control.Category
@@ -12,17 +12,36 @@ import FRP.Yampa
 
 import qualified Data.Sequence as S
 import Data.Sequence (Seq (..))
+import Data.Foldable (toList)
 import Data.Monoid ((<>))
 
-content :: Content -> SF (Event EditorEvent, Position) Content
+newtype Content = Content
+  { contentSeq :: S.Seq (S.Seq Char)
+  }
+
+instance ViewContent Content where
+  viewContent (Content con) (Position vc vr, Size vw vh) =
+    map (toList . S.take (fromIntegral vw) . S.drop (fromIntegral vc))
+      $ toList $ S.take (fromIntegral vh) $ S.drop (fromIntegral vr) con
+
+instance HasShape Content where
+  projectShape = Shape . fmap S.length . contentSeq
+
+emptyContent :: Content
+emptyContent = Content S.Empty
+
+data ContentEvent
+  = ContentInsert !Char
+  | ContentBackspace
+  | ContentDelete
+
+content :: Content -> SF (Event ContentEvent, Position) Content
 content c0 = accumHoldBy replaceContent c0 . arr (\(e,p) -> e >>= mkReplace p)
   where
     mkReplace p = \case
-      EditorInsert c  -> Event (Range p (Size 0 0), [c])
-      EditorBackspace -> Event (Range p (Size 1 0), "") -- FIXME
-      EditorDelete    -> Event (Range p (Size 1 0), "")
-      -- TODO: Make ContentEvent datatype (See the TODO in Cursor.hs)
-      _ -> NoEvent
+      ContentInsert c  -> Event (Range p (Size 0 0), [c])
+      ContentBackspace -> Event (Range p (Size 1 0), "") -- FIXME
+      ContentDelete    -> Event (Range p (Size 1 0), "")
 
 replaceContent :: Content -> (Range, String) -> Content
 replaceContent (Content s) (Range pos@(Position _ _) size, as) =
